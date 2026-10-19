@@ -1,0 +1,80 @@
+name: Build Shared Money Android APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Show repository layout
+        run: |
+          echo "=== Current directory ==="
+          pwd
+          echo ""
+          echo "=== Files at repository root ==="
+          ls -la
+          echo ""
+          echo "=== Looking for settings.gradle ==="
+          find . -name "settings.gradle" -o -name "settings.gradle.kts" 2>/dev/null || true
+          echo ""
+          echo "=== Looking for app/build.gradle ==="
+          find . -path "*/app/build.gradle" 2>/dev/null || true
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      # Fixed: use v4 – older versions fail because Google removed the "tools" package
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install Android SDK packages
+        run: |
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Validate project structure
+        run: |
+          if [ ! -f settings.gradle ]; then
+            echo "ERROR: settings.gradle is missing from the repository root."
+            echo ""
+            echo "Your GitHub repo must look like this at the root:"
+            echo ""
+            echo "  settings.gradle"
+            echo "  build.gradle"
+            echo "  gradlew"
+            echo "  gradle/"
+            echo "  app/"
+            echo "    build.gradle"
+            echo "    src/main/..."
+            echo "  .github/workflows/build-apk.yml"
+            echo ""
+            echo "Common mistake: you extracted the zip and pushed the *SharedMoney* folder"
+            echo "instead of its *contents*. The files must be at the repo root, not inside"
+            echo "a SharedMoney/ subfolder."
+            exit 1
+          fi
+          test -f app/build.gradle || { echo "ERROR: app/build.gradle missing"; exit 1; }
+          test -f app/src/main/AndroidManifest.xml || { echo "ERROR: AndroidManifest.xml missing"; exit 1; }
+          test -f app/src/main/java/com/sharedmoney/app/MainActivity.java || { echo "ERROR: MainActivity.java missing"; exit 1; }
+          test -f app/src/main/assets/index.html || { echo "ERROR: index.html missing"; exit 1; }
+          echo "Project structure OK"
+
+      - name: Build debug APK
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --no-daemon :app:assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: SharedMoney-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
